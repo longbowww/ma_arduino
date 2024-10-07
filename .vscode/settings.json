@@ -1,0 +1,11 @@
+{
+    "C_Cpp.default.excludePath": [
+        "${workspaceFolder}/.pio/**"
+    ],
+    "git.exclude": {
+        "**/.pio": true
+    },
+    "cSpell.words": [
+        "MQTT"
+    ]
+}
