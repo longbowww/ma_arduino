@@ -10,7 +10,7 @@ public:
   bool begin();
   bool hasMessage();
   bool readMessage(unsigned long& id, unsigned char& len, unsigned char* buf);
-  bool sendMessage(unsigned long id, unsigned char len, const unsigned char* buf);
+  bool sendMessage(unsigned long id, unsigned char len, unsigned char* buf);
 
 private:
   MCP_CAN can_;

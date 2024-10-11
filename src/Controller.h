@@ -22,12 +22,18 @@ public:
 private:
     void processCANMessages();
     void publishVehicleData();
+    void updateStatusLED();
 
     WiFiManager wifiManager_;
     MQTTManager mqttManager_;
     CANManager canManager_;
     Vehicle vehicle_;
     String mqttClientId_;
+
+      // Status flags
+    bool wifiConnected_;
+    bool mqttConnected_;
+    bool canConnected_;
 };
 
 #endif // CONTROLLER_H

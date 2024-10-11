@@ -40,23 +40,26 @@ bool MQTTManager::publish(const String& topic, const String& message) {
     return client_.publish(topic.c_str(), message.c_str());
 }
 
-bool MQTTManager::isConnected() const {
+bool MQTTManager::isConnected() {
     return client_.connected();
 }
 
 void MQTTManager::callback(char* topic, byte* payload, unsigned int length) {
-    payload[length] = '\0'; // Null-terminate the payload
-    String message = String((char*)payload);
+    char message[length + 1];
+    memcpy(message, payload, length);
+    message[length] = '\0'; // Null-terminate the copied payload
+    String msgString = String(message);
+
     Serial.print("MQTT Message Received - Topic: ");
     Serial.print(topic);
     Serial.print(", Message: ");
-    Serial.println(message);
+    Serial.println(msgString);
 
     // Handle incoming messages as needed
     // Example:
     /*
     if (strcmp(topic, "control/motors") == 0) {
-        int speed = message.toInt();
+        int speed = msgString.toInt();
         // Handle speed control
     }
     */
