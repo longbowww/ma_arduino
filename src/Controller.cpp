@@ -53,6 +53,9 @@ void Controller::setup() {
 }
 
 void Controller::loop() {
+    // Update the status LED based on connection statuses
+  updateStatusLED();
+
   // Update WiFi connection status
   wifiConnected_ = wifiManager_.isConnected();
 
@@ -76,9 +79,6 @@ void Controller::loop() {
       canConnected_ = false;
     }
   }
-
-  // Update the status LED based on connection statuses
-  updateStatusLED();
 
   // Optional: Add other periodic tasks here
 }

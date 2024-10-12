@@ -15,10 +15,14 @@ void MQTTManager::begin() {
 }
 
 void MQTTManager::reconnect() {
-    while (!client_.connected()) {
+    static unsigned long lastAttemptTime = 0;
+    const unsigned long retryInterval = 5000; // 5 seconds
+
+    if (!client_.connected() && millis() - lastAttemptTime > retryInterval) {
+        lastAttemptTime = millis();
         Serial.print("Attempting MQTT connection...");
-        // Generate a unique client ID using the MAC address
         String clientId = "ESPClient-" + getMacAddressAsString();
+
         if (client_.connect(clientId.c_str())) {
             Serial.println(" connected to MQTT");
             // Subscribe to necessary topics if needed
@@ -26,8 +30,7 @@ void MQTTManager::reconnect() {
         } else {
             Serial.print("failed, rc=");
             Serial.print(client_.state());
-            Serial.println(" try again in 5 seconds");
-            delay(RECONNECT_DELAY);
+            Serial.println(" retrying...");
         }
     }
 }

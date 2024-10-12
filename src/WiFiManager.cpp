@@ -12,10 +12,20 @@ WiFiManager::WiFiManager(const char* ssid, const char* password)
 void WiFiManager::begin() {
     WiFi.begin(ssid_, password_);
     Serial.print("Connecting to WiFi");
+
+    unsigned long startAttemptTime = millis();
+    const unsigned long timeout = 20000; // 20 seconds timeout
+
     while (WiFi.status() != WL_CONNECTED) {
+        if (millis() - startAttemptTime > timeout) {
+            Serial.println("\nFailed to connect to WiFi");
+            return; // Exit if timeout occurs
+        }
+
         delay(500);
         Serial.print(".");
     }
+
     Serial.println("\nConnected to WiFi");
 }
 
