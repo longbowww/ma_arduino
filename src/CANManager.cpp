@@ -20,7 +20,7 @@ bool CANManager::hasMessage() {
 }
 
 bool CANManager::readMessage(unsigned long& id, unsigned char& len, unsigned char* buf) {
-  return can_.readMsgBuf(&id, &len, buf);
+  return can_.readMsgBuf(&id, &len, buf) == CAN_OK;
 }
 
 bool CANManager::sendMessage(unsigned long id, unsigned char len, unsigned char* buf) {
