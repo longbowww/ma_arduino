@@ -7,10 +7,10 @@
 
 struct Vehicle {
     int number;
-    uint16_t speed;
-    uint16_t distance;
+    float_t speed;
+    float_t distance;
 
-    Vehicle(int num) : number(num), speed(0), distance(0) {}
+    Vehicle(int num) : number(num), speed(0.0), distance(0.0) {}
 };
 
 class Controller {

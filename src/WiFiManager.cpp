@@ -11,6 +11,7 @@ WiFiManager::WiFiManager(const char* ssid, const char* password)
 
 void WiFiManager::begin() {
     WiFi.begin(ssid_, password_);
+    WiFi.setSleep(false);
     Serial.print("Connecting to WiFi");
 
     unsigned long startAttemptTime = millis();

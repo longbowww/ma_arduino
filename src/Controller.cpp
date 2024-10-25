@@ -118,14 +118,14 @@ void Controller::processCANMessages()
 
     canManager_.readMessage(canId, len, buf);
 
-    
+
     if((canId & 0x80000000) == 0x80000000)     // Determine if ID is standard (11 bits) or extended (29 bits)
       sprintf(msgString, "Extended ID: 0x%.8lX  DLC: %1d  Data:", (canId & 0x1FFFFFFF), len);
     else
       sprintf(msgString, "Standard ID: 0x%.3lX       DLC: %1d  Data:", canId, len);
-  
+
     Serial.print(msgString);
-  
+
     if((canId & 0x40000000) == 0x40000000){    // Determine if message is a remote request frame.
       sprintf(msgString, " REMOTE REQUEST FRAME");
       Serial.print(msgString);
@@ -138,25 +138,26 @@ void Controller::processCANMessages()
 
     Serial.println(msgString);
   } */
-  
-  if (canManager_.hasMessage()) {
+
+  if (canManager_.hasMessage())
+  {
     unsigned long int canId;
     unsigned char len = 0;
     unsigned char buf[8];
 
-    if (canManager_.readMessage(canId, len, buf)) {
+    if (canManager_.readMessage(canId, len, buf))
+    {
       Serial.print("Received CAN ID: ");
       Serial.println(canId, HEX);
 
-      if (canId == 0x69 && len >= 4) { // Ensure the CAN ID and enough data bytes
+      if (canId == 0x69 && len >= 4)
+      { // Ensure the CAN ID and enough data bytes
         // Decode speed and distance from the CAN message
         uint16_t rawSpeed = (buf[0] << 8) | buf[1];
         uint16_t rawDistance = (buf[2] << 8) | buf[3];
 
         // Convert to fixed-point values
-        Serial.println("rawr");
-        Serial.println(rawSpeed);
-        vehicle_.speed = rawSpeed / 100.0;   // Fixed-point to float
+        vehicle_.speed = rawSpeed / 100.0;       // Fixed-point to float
         vehicle_.distance = rawDistance / 100.0; // Fixed-point to float
 
         Serial.print("Vehicle ");
@@ -167,28 +168,22 @@ void Controller::processCANMessages()
         Serial.print(vehicle_.distance);
         Serial.println(" m");
 
-        // Publish to MQTT only if vehicle number > 1
-        if (vehicle_.number > 1) {
-          Serial.println("Publishing vehicle data...");
-          publishVehicleData();
-        } else {
-          // Publish zero values for vehicle 1
-          Serial.println("Publishing zero values for vehicle 1...");
-          vehicle_.speed = 0;
-          vehicle_.distance = 0;
-          publishVehicleData();
-        }
-      } else {
+        Serial.println("Publishing vehicle data...");
+        publishVehicleData();
+      }
+      else
+      {
         Serial.println("Received CAN message with unexpected ID or insufficient length.");
       }
-    } else {
+    }
+    else
+    {
       Serial.println("tried but failed :(");
     }
   }
 }
 
-void Controller::publishVehicleData()
-{
+void Controller::publishVehicleData() {
   // Construct MQTT topics
   String speedTopic = "/vehicles/" + String(vehicle_.number) + "/speed";
   String distanceTopic = "/vehicles/" + String(vehicle_.number) + "/distance";
@@ -200,12 +195,7 @@ void Controller::publishVehicleData()
   // Publish speed
   Serial.print("Publishing speed to topic: ");
   Serial.println(speedTopic);
-  if (mqttManager_.publish(speedTopic, speedStr))
-  {
-    Serial.println("Speed published successfully");
-  }
-  else
-  {
+  if (!mqttManager_.publish(speedTopic, speedStr )) {
     Serial.println("Failed to publish speed");
     // mqttConnected_ = false; // Commented out as immediate disconnection assumption is not always valid
   }
@@ -213,11 +203,7 @@ void Controller::publishVehicleData()
   // Publish distance
   Serial.print("Publishing distance to topic: ");
   Serial.println(distanceTopic);
-  if (mqttManager_.publish(distanceTopic, distanceStr))
-  {
-    Serial.println("Distance published successfully");
-  }
-  else
+  if (!mqttManager_.publish(distanceTopic, distanceStr))
   {
     Serial.println("Failed to publish distance");
     // mqttConnected_ = false; // Commented out as immediate disconnection assumption is not always valid
