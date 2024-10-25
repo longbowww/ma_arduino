@@ -40,7 +40,8 @@ void MQTTManager::loop() {
 }
 
 bool MQTTManager::publish(const String& topic, const String& message) {
-    return client_.publish(topic.c_str(), message.c_str());
+    // always send retained: true, so new clients will receive the last measurement
+    return client_.publish(topic.c_str(), message.c_str(), true);
 }
 
 bool MQTTManager::isConnected() {
