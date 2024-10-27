@@ -32,180 +32,281 @@ Controller::Controller(int vehicleNum)
 
 void Controller::setup()
 {
-  // Initialize LED Manager
-  Serial.println("Setting up LED Manager...");
-  ledManager.setup();
+    // Initialize LED Manager
+    Serial.println("Setting up LED Manager...");
+    ledManager.setup();
 
-  // Initialize Serial
-  Serial.begin(115200);
-  delay(1000); // Wait for Serial to initialize
-  Serial.println("Serial initialized.");
+    // Initialize Serial
+    Serial.begin(115200);
+    delay(1000);
+    Serial.println("Serial initialized.");
 
-  // Initialize WiFi
-  Serial.println("Initializing WiFi...");
-  wifiManager_.begin();
+    // Initialize WiFi
+    Serial.println("Initializing WiFi...");
+    wifiManager_.begin();
 
-  // Initialize MQTT
-  Serial.println("Initializing MQTT...");
-  mqttManager_.begin();
+    // Initialize MQTT
+    Serial.println("Initializing MQTT...");
+    mqttManager_.begin();
 
-  // Initialize CAN
-  Serial.println("Initializing CAN...");
-  if (!canManager_.begin())
-  {
-    Serial.println("CAN Initialization Failed. Continuing to retry.");
-    canConnected_ = false;
-    // Continue running to attempt reconnection later
-  }
-  else
-  {
-    Serial.println("CAN Initialized successfully.");
-    canConnected_ = true;
-  }
+    // Initialize CAN
+    Serial.println("Initializing CAN...");
+    if (!canManager_.begin())
+    {
+        Serial.println("CAN Initialization Failed. Continuing to retry.");
+        canConnected_ = false;
+    }
+    else
+    {
+        Serial.println("CAN Initialized successfully.");
+        canConnected_ = true;
+    }
+}
+
+void Controller::setupSubscriptions()
+{
+    Serial.print("Vehicle number: ");
+    Serial.println(vehicle_.number);
+
+    if (vehicle_.number == 1)
+    {
+        // Lead vehicle (1) subscribes to command topic for speed control
+        String commandTopic = formatTopic(TOPIC_PATTERN_COMMAND, vehicle_.number);
+        Serial.printf("Lead vehicle attempting to subscribe to: %s\n", commandTopic.c_str());
+        if (mqttManager_.subscribe(commandTopic))
+        {
+            Serial.printf("Successfully subscribed to: %s\n", commandTopic.c_str());
+        }
+        else
+        {
+            Serial.printf("Failed to subscribe to: %s\n", commandTopic.c_str());
+        }
+    }
+    else
+    {
+        // Follower vehicles subscribe to data topics of all vehicles ahead of them
+        Serial.printf("Follower vehicle %d setting up subscriptions...\n", vehicle_.number);
+
+        for (int i = 1; i < vehicle_.number; ++i)
+        {
+            String dataTopic = formatTopic(TOPIC_PATTERN_DATA, i);
+            Serial.printf("Attempting to subscribe to: %s\n", dataTopic.c_str());
+            if (mqttManager_.subscribe(dataTopic))
+            {
+                Serial.printf("Successfully subscribed to: %s\n", dataTopic.c_str());
+            }
+            else
+            {
+                Serial.printf("Failed to subscribe to: %s\n", dataTopic.c_str());
+            }
+        }
+    }
+
+    // Set callback for all incoming messages
+    mqttManager_.setOnMessageCallback([this](const String &topic, const String &payload)
+                                      { this->onReceivedMessage(topic, payload); });
+
+    Serial.println("Subscription setup completed");
+}
+
+String Controller::formatTopic(const char *pattern, int vehicleNumber) const
+{
+    char buffer[32];
+    snprintf(buffer, sizeof(buffer), pattern, vehicleNumber);
+    return String(buffer);
 }
 
 void Controller::loop()
 {
-  // Update the status LED based on connection statuses
-  ledManager.updateStatus(wifiConnected_, mqttConnected_, canConnected_);
+    // Update the status LED based on connection statuses
+    ledManager.updateStatus(wifiConnected_, mqttConnected_, canConnected_);
 
-  // Update WiFi connection status
-  wifiConnected_ = wifiManager_.isConnected();
-  // Ensure MQTT is connected
-  if (!mqttManager_.isConnected())
-  {
-    mqttManager_.reconnect();
-    mqttConnected_ = mqttManager_.isConnected();
-  }
-  else
-  {
-    mqttConnected_ = true;
-  }
+    // Update WiFi connection status
+    wifiConnected_ = wifiManager_.isConnected();
 
-  mqttManager_.loop();
-
-  // Handle incoming CAN messages
-  if (canConnected_)
-  {
-    processCANMessages();
-  }
-  else
-  {
-    if (canManager_.begin())
+    // Handle MQTT connection and subscriptions
+    if (!mqttManager_.isConnected())
     {
-      pinMode(3, INPUT);
-      canConnected_ = true;
+        mqttConnected_ = false;
+        subscriptionsInitialized_ = false; // Reset subscription flag when disconnected
+        if (mqttManager_.reconnect())
+        {
+            mqttConnected_ = true;
+            Serial.println("MQTT reconnected successfully");
+        }
     }
     else
     {
-      canConnected_ = false;
-    }
-  }
+        mqttConnected_ = true;
 
-  delay(100);
-  // Optional: Add other periodic tasks here
+        // Set up subscriptions only once after connection is established
+        if (!subscriptionsInitialized_ && mqttConnected_)
+        {
+            Serial.println("Setting up MQTT subscriptions...");
+            setupSubscriptions();
+            subscriptionsInitialized_ = true;
+            Serial.println("MQTT subscriptions completed");
+        }
+    }
+
+    mqttManager_.loop();
+
+    // Handle CAN connection
+    if (!canConnected_)
+    {
+        if (canManager_.begin())
+        {
+            pinMode(3, INPUT);
+            canConnected_ = true;
+            Serial.println("CAN connected successfully");
+        }
+    }
+
+    // Process CAN messages if connected
+    if (canConnected_)
+    {
+        processCANMessages();
+    }
+
+    delay(100);
 }
 
 void Controller::processCANMessages()
 {
-  /* FOR DEBUG !!!ONLY!!
-  // Serial.println("Processing CAN messages...");
-  if (canManager_.hasMessage()) {
-    unsigned long int canId;
-    unsigned char len = 0;
-    unsigned char buf[8];
-    char msgString[256];
-
-    canManager_.readMessage(canId, len, buf);
-
-
-    if((canId & 0x80000000) == 0x80000000)     // Determine if ID is standard (11 bits) or extended (29 bits)
-      sprintf(msgString, "Extended ID: 0x%.8lX  DLC: %1d  Data:", (canId & 0x1FFFFFFF), len);
-    else
-      sprintf(msgString, "Standard ID: 0x%.3lX       DLC: %1d  Data:", canId, len);
-
-    Serial.print(msgString);
-
-    if((canId & 0x40000000) == 0x40000000){    // Determine if message is a remote request frame.
-      sprintf(msgString, " REMOTE REQUEST FRAME");
-      Serial.print(msgString);
-    } else {
-      for(byte i = 0; i<len; i++){
-        sprintf(msgString, " 0x%.2X", buf[i]);
-        Serial.print(msgString);
-      }
-    }
-
-    Serial.println(msgString);
-  } */
-
-  if (canManager_.hasMessage())
-  {
-    unsigned long int canId;
-    unsigned char len = 0;
-    unsigned char buf[8];
-
-    if (canManager_.readMessage(canId, len, buf))
+    if (canManager_.hasMessage())
     {
-      Serial.print("Received CAN ID: ");
-      Serial.println(canId, HEX);
+        unsigned long int canId;
+        unsigned char len = 0;
+        unsigned char buf[8]; // Buffer to store the CAN message data
 
-      if (canId == 0x69 && len >= 4)
-      { // Ensure the CAN ID and enough data bytes
-        // Decode speed and distance from the CAN message
-        uint16_t rawSpeed = (buf[0] << 8) | buf[1];
-        uint16_t rawDistance = (buf[2] << 8) | buf[3];
-
-        // Convert to fixed-point values
-        vehicle_.speed = rawSpeed / 100.0;       // Fixed-point to float
-        vehicle_.distance = rawDistance / 100.0; // Fixed-point to float
-
-        Serial.print("Vehicle ");
-        Serial.print(vehicle_.number);
-        Serial.print(" - Speed: ");
-        Serial.print(vehicle_.speed);
-        Serial.print(" m/s, Distance: ");
-        Serial.print(vehicle_.distance);
-        Serial.println(" m");
-
-        Serial.println("Publishing vehicle data...");
-        publishVehicleData();
-      }
-      else
-      {
-        Serial.println("Received CAN message with unexpected ID or insufficient length.");
-      }
+        if (canManager_.readMessage(canId, len, buf))
+        {
+            // Only process if the CAN ID is expected
+            if (canId == 0x69 && len >= 4)
+            {
+                publishVehicleData(buf, len);
+            }
+            else
+            {
+                Serial.println("Received CAN message with unexpected ID or insufficient length.");
+            }
+        }
     }
-    else
-    {
-      Serial.println("tried but failed :(");
-    }
-  }
 }
 
-void Controller::publishVehicleData() {
-  // Construct MQTT topics
-  String speedTopic = "/vehicles/" + String(vehicle_.number) + "/speed";
-  String distanceTopic = "/vehicles/" + String(vehicle_.number) + "/distance";
+void Controller::publishVehicleData(const unsigned char *buf, unsigned char len)
+{
+    String dataTopic = "/vehicle/" + String(vehicle_.number) + "/data";
 
-  // Convert data to string
-  String speedStr = String(vehicle_.speed);
-  String distanceStr = String(vehicle_.distance);
+    // Convert the raw buffer to a hex string
+    String hexPayload;
+    hexPayload.reserve(len * 2); // Preallocate space for efficiency
 
-  // Publish speed
-  Serial.print("Publishing speed to topic: ");
-  Serial.println(speedTopic);
-  if (!mqttManager_.publish(speedTopic, speedStr )) {
-    Serial.println("Failed to publish speed");
-    // mqttConnected_ = false; // Commented out as immediate disconnection assumption is not always valid
-  }
+    for (int i = 0; i < len; ++i)
+    {
+        if (buf[i] < 0x10)
+        {
+            hexPayload += '0'; // Add leading zero for single-digit hex values
+        }
+        hexPayload += String(buf[i], HEX);
+    }
 
-  // Publish distance
-  Serial.print("Publishing distance to topic: ");
-  Serial.println(distanceTopic);
-  if (!mqttManager_.publish(distanceTopic, distanceStr))
-  {
-    Serial.println("Failed to publish distance");
-    // mqttConnected_ = false; // Commented out as immediate disconnection assumption is not always valid
-  }
+    // Publish the hex string
+    if (!mqttManager_.publish(dataTopic, hexPayload.c_str()))
+    {
+        Serial.println("Failed to publish raw CAN data");
+    }
+}
+
+void Controller::onReceivedMessage(const String &topic, const String &payload)
+{
+    int vehicleId = extractVehicleId(topic);
+
+    Serial.printf("Received message on topic: %s with payload: %s\n", topic.c_str(), payload.c_str());
+
+    // Handle command messages
+    if (isCommandTopic(topic))
+    {
+        if (vehicleId == vehicle_.number)
+        {
+            Serial.println("Processing command message");
+            uint8_t speed = payload.toInt();
+            Serial.printf("Parsed speed: %d\n", speed);
+            handleSpeedCommand(speed);
+        }
+        else
+        {
+            Serial.printf("Ignoring command for vehicle %d (we are %d)\n",
+                          vehicleId, vehicle_.number);
+        }
+    }
+    // Handle data messages
+    else if (isDataTopic(topic) && vehicleId != vehicle_.number)
+    {
+        handleVehicleRelay(vehicleId, payload);
+    }
+    else
+    {
+        Serial.printf("Message type not recognized or not for us (topic: %s)\n", topic.c_str());
+    }
+}
+
+// In Controller.cpp
+void Controller::handleSpeedCommand(uint8_t speed) {
+    unsigned char buf[1];
+    // assumption is that we only send 0->255 manually as speed for leader
+    buf[0] = static_cast<unsigned char>(speed);
+
+    printBuffer("Sending speed command:", buf, 2);
+
+    // Send with ID 0x66 (CAN_ID_CONTROL)
+    unsigned char tempBuf[8]; // Temporary buffer for CAN manager
+    memcpy(tempBuf, buf, 2);
+
+    if (!canManager_.sendMessage(CAN_ID_CONTROL, 1, tempBuf)) {
+        Serial.println("Failed to send speed command via CAN");
+    }
+}
+
+void Controller::printBuffer(const char *label, const unsigned char *buf, unsigned char len) {
+    Serial.print(label);
+    for (unsigned char i = 0; i < len; i++)
+    {
+        Serial.printf(" %02X", buf[i]);
+    }
+    Serial.println();
+}
+
+void Controller::handleVehicleRelay(int sourceVehicleId, const String &payload)
+{
+    Serial.printf("Relaying data for vehicle %d: %s\n", sourceVehicleId, payload.c_str());
+
+    const char *rawData = payload.c_str();
+    unsigned char len = min(payload.length(), (unsigned int)8);
+
+    unsigned char buf[8];
+    memcpy(buf, rawData, len);
+
+    sendCANMessage(CAN_ID_CONTROL, buf, len);
+}
+
+bool Controller::sendCANMessage(unsigned long canId, const unsigned char *data, unsigned char length)
+{
+    if (!canManager_.sendMessage(canId, length, data))
+    {
+        Serial.println("Failed to send CAN message");
+        return false;
+    }
+    return true;
+}
+
+int Controller::extractVehicleId(const String &topic) const
+{
+    // Find position after "/vehicle/" and before next "/"
+    int startPos = topic.indexOf("/vehicle/") + 9;
+    int endPos = topic.indexOf("/", startPos);
+    if (startPos == -1 || endPos == -1)
+        return -1;
+
+    return topic.substring(startPos, endPos).toInt();
 }
